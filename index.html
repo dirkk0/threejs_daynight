@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+    <html>
+    <head>
+        <title>Shadows</title>    
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r71/three.min.js"></script>
+
+        <script type="x-shader/x-vertex" id="vertexShader">
+
+            varying vec3 worldPosition;
+
+            void main() {
+
+                vec4 mPosition = modelMatrix * vec4( position, 1.0 );
+
+                gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+                worldPosition = mPosition.xyz;
+
+            }
+
+        </script>
+
+        <script type="x-shader/x-fragment" id="fragmentShader">
+
+            uniform vec3 topColor;
+            uniform vec3 bottomColor;
+            uniform float offset;
+            uniform float exponent;
+
+            varying vec3 worldPosition;
+
+            void main() {
+
+                float h = normalize( worldPosition + offset ).y;
+                gl_FragColor = vec4( mix( bottomColor, topColor, max( pow( h, exponent ), 0.0 ) ), 1.0 );
+
+            }
+
+        </script>
+
+
+        <script>
+        window.onload = function() {
+
+
+
+            renderer = new THREE.WebGLRenderer( { antialias: true } );
+            renderer.setPixelRatio( window.devicePixelRatio );
+            renderer.setSize( window.innerWidth, window.innerHeight );
+            document.body.appendChild( renderer.domElement );
+
+            renderer.gammaInput = true;
+            renderer.gammaOutput = true;
+
+            renderer.shadowMapEnabled = true;
+            renderer.shadowMapCullFace = THREE.CullFaceBack;
+
+
+            var scene = new THREE.Scene();
+
+
+            camera = new THREE.PerspectiveCamera( 30, window.innerWidth / window.innerHeight, 1, 5000 );
+            camera.position.set( -15, 2, 5 );
+
+            camera.lookAt( scene.position );
+
+
+            // add three objects that cast shadows
+
+            var geometry1 = new THREE.BoxGeometry( 1, 4, 1 );
+            var material1 = new THREE.MeshLambertMaterial( { color: 0xFF0000 } );
+            var mesh1 = new THREE.Mesh( geometry1, material1 );
+            mesh1.castShadow = true;
+            mesh1.receiveShadow = true;
+            scene.add( mesh1 );
+
+            var geometry2 = new THREE.BoxGeometry( 3, 2, 1 );
+            var material2 = new THREE.MeshLambertMaterial( { color: 0x0000FF } );
+            var mesh2 = new THREE.Mesh( geometry2, material2 );
+            mesh2.castShadow = true;
+            mesh2.receiveShadow = true;
+            mesh2.position.x = 0
+            mesh2.position.y = -1.5
+            mesh2.position.z = -3
+            scene.add( mesh2 );
+
+            var geometry3 = new THREE.BoxGeometry( 2, 1, 2 );
+            var material3 = new THREE.MeshLambertMaterial( { color: 0x00FF00 } );
+            var mesh3 = new THREE.Mesh( geometry3, material3 );
+            mesh3.position.x = -2
+            mesh3.position.y = -2
+            mesh3.position.z = -1
+            mesh3.castShadow = true;
+            mesh3.receiveShadow = true;
+            scene.add( mesh3 );
+
+
+            // add hemi lights
+
+            var hemiLight = new THREE.HemisphereLight( 0xffffff, 0xffffff, 0.05 );
+            hemiLight.color.setHSL( 0.6, 1, 0.6 );
+            hemiLight.groundColor.setHSL( 0.095, 1, 0.75 );
+            hemiLight.position.set( 0, 500, 0 );
+            scene.add( hemiLight );
+
+            // this is the Sun
+            dirLight = new THREE.DirectionalLight( 0xffffff, 1 );
+            dirLight.color.setHSL( 0.1, 1, 0.95 );
+            dirLight.position.set( -1, 0.75, 1 );
+            dirLight.position.multiplyScalar( 50 );
+            scene.add( dirLight );
+            // dirLight.shadowCameraVisible = true;
+
+            dirLight.castShadow = true;
+            dirLight.shadowMapWidth = dirLight.shadowMapHeight = 1024*2;
+
+            var d = 30;
+
+            dirLight.shadowCameraLeft = -d;
+            dirLight.shadowCameraRight = d;
+            dirLight.shadowCameraTop = d;
+            dirLight.shadowCameraBottom = -d;
+
+            // the magic is here - this needs to be tweaked if you change dimensions
+
+            dirLight.shadowCameraFar = 3500;
+            dirLight.shadowBias = -0.000001;
+            dirLight.shadowDarkness = 0.35;
+            scene.add( dirLight );
+
+
+
+            scene.fog = new THREE.Fog(0x222233, 0, 20000);
+            renderer.setClearColor( scene.fog.color, 1 );
+
+
+            // add ground
+            var groundGeo = new THREE.PlaneBufferGeometry( 1000, 1000 );
+            var groundMat = new THREE.MeshPhongMaterial( { color: 0xffffff, specular: 0x050505 } );
+            groundMat.color.setHSL( 0.095, 1, 0.75 );
+            ground = new THREE.Mesh( groundGeo, groundMat );
+            ground.rotation.x = -Math.PI/2;
+            ground.position.y = -2;
+            scene.add( ground );
+            ground.receiveShadow = true;
+
+
+            // add skydome
+
+            var vertexShader = document.getElementById( 'vertexShader' ).textContent;
+            var fragmentShader = document.getElementById( 'fragmentShader' ).textContent;
+            var uniforms = {
+                topColor:    { type: "c", value: new THREE.Color( 0x0077ff ) },
+                bottomColor: { type: "c", value: new THREE.Color( 0xffffff ) },
+                offset:      { type: "f", value: 33 },
+                exponent:    { type: "f", value: 0.6 }
+            }
+            uniforms.topColor.value.copy( hemiLight.color );
+
+            scene.fog.color.copy( uniforms.bottomColor.value );
+
+            var skyGeo = new THREE.SphereGeometry( 4000, 32, 15 );
+            var skyMat = new THREE.ShaderMaterial( { vertexShader: vertexShader, fragmentShader: fragmentShader, uniforms: uniforms, side: THREE.BackSide } );
+
+            var sky = new THREE.Mesh( skyGeo, skyMat );
+            scene.add( sky );
+
+
+            var clock = new THREE.Clock();
+            animate();
+
+            function animate() {
+                requestAnimationFrame( animate );
+                render();
+            }
+
+            function render() {
+                var delta = clock.getDelta();
+                renderer.render( scene, camera );
+
+
+                var time = new Date().getTime() * 0.0002;
+                // var time = 2.1;
+
+                var nsin = Math.sin(time);
+                var ncos = Math.cos(time);
+
+                // set the sun
+                dirLight.position.set( 1500*nsin, 2000*nsin, 2000*ncos);
+
+
+
+                if (nsin > 0.2 )   // day
+                {
+                    sky.material.uniforms.topColor.value.setRGB(0.25,0.55,1);
+                    sky.material.uniforms.bottomColor.value.setRGB(1,1,1);
+                    var f = 1;
+                    dirLight.intensity = f;
+                    dirLight.shadowDarkness = f*0.7;
+                }
+
+                else if (nsin < 0.2 && nsin > 0.0 )
+                {
+                    var f = nsin/0.2;
+                    dirLight.intensity = f;
+                    dirLight.shadowDarkness = f*0.7;
+
+                    sky.material.uniforms.topColor.value.setRGB(0.25*f,0.55*f,1*f);
+                    sky.material.uniforms.bottomColor.value.setRGB(1*f,   1*f,1*f);
+                }
+
+                else  // night
+                {
+                    var f = 0;
+                    dirLight.intensity = f;
+                    dirLight.shadowDarkness = f*0.7;
+                    sky.material.uniforms.topColor.value.setRGB(0,0,0);
+                    sky.material.uniforms.bottomColor.value.setRGB(0,0,0);
+                }
+            }
+
+        };
+        </script>
+    </head>
+    <body></body>
+    </html>
